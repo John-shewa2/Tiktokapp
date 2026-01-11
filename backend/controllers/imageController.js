@@ -46,3 +46,18 @@ export async function createImageJobs(req, res) {
     });
   }
 }
+
+/**
+ * Get the status of all jobs for a specific project.
+ * Called by frontend polling.
+ */
+export async function getProjectStatus(req, res) {
+  try {
+    const { projectId } = req.params;
+    const jobs = await ImageJob.find({ projectId });
+    res.json(jobs);
+  } catch (err) {
+    console.error("Error fetching project status:", err);
+    res.status(500).json({ message: "Error fetching status", error: err.message });
+  }
+}
