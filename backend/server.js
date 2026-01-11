@@ -1,7 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
-import cors from "cors"; // Added cors
-import path from "path"; // Added path
+import cors from "cors"; // Import cors
+import path from "path"; // Import path
 import connectDB from "./config/db.js";
 import imageRoutes from "./routes/imageRoutes.js";
 import { processImageQueue } from "./services/imageQueue.js";
@@ -11,12 +11,17 @@ connectDB();
 
 const app = express();
 
-// Enable CORS for frontend communication
-app.use(cors());
+// 1. Configure CORS to allow your Frontend to talk to the Backend
+app.use(cors({
+  origin: "http://localhost:5173", // Allow the Vite frontend URL
+  methods: ["GET", "POST"],       // Allow these HTTP methods
+  allowedHeaders: ["Content-Type"] // Allow standard headers
+}));
+
 app.use(express.json());
 
-// Serve generated images statically so frontend can display them
-// Access at: http://localhost:5000/generated_images/PROJECT_ID/IMAGE_NAME.png
+// 2. Serve the generated images folder statically
+// This allows the frontend to load images via http://localhost:5000/generated_images/...
 const __dirname = path.resolve();
 app.use("/generated_images", express.static(path.join(__dirname, "generated_images")));
 
