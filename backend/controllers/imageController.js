@@ -61,3 +61,29 @@ export async function getProjectStatus(req, res) {
     res.status(500).json({ message: "Error fetching status", error: err.message });
   }
 }
+
+export async function getAllProjects(req, res) {
+  try {
+    // Aggregate jobs to group by projectId
+    const projects = await ImageJob.aggregate([
+      {
+        $group: {
+          _id: "$projectId",
+          createdAt: { $min: "$createdAt" },
+          totalImages: { $sum: 1 },
+          completedImages: { 
+            $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } 
+          },
+          // Get the first image path as a thumbnail
+          thumbnail: { $first: "$imagePath" }
+        }
+      },
+      { $sort: { createdAt: -1 } } // Newest first
+    ]);
+
+    res.json(projects);
+  } catch (err) {
+    console.error("Error fetching projects:", err);
+    res.status(500).json({ message: "Error fetching history" });
+  }
+}

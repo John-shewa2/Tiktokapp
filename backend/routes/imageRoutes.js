@@ -1,5 +1,5 @@
 import express from "express";
-import { createImageJobs, getProjectStatus } from "../controllers/imageController.js";
+import { createImageJobs, getProjectStatus, getAllProjects } from "../controllers/imageController.js";
 
 const router = express.Router();
 
@@ -14,6 +14,8 @@ router.post("/", createImageJobs);
  * @route   GET /api/images/:projectId
  * @desc    Get status of all images in a project
  */
+
+router.get("/history", getAllProjects);
 router.get("/:projectId", getProjectStatus);
 
 export default router;
