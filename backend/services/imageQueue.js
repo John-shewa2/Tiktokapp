@@ -5,10 +5,15 @@ import path from "path";
 
 let isProcessing = false;
 
-// Read ComfyUI output dir from env, fallback to previous hard-coded path
-const comfyOutputDir = process.env.COMFY_OUTPUT_DIR || path.join("C:", "Users", "eldi2", "Desktop", "AI", "ComfyUI", "output");
-
 export async function processImageQueue() {
+  // FIX: Read env variable inside the function to ensure .env is loaded
+  const comfyOutputDir = process.env.COMFY_OUTPUT_DIR;
+
+  if (!comfyOutputDir) {
+    console.error("❌ COMFY_OUTPUT_DIR is not defined in .env");
+    return;
+  }
+
   if (isProcessing) return;
   isProcessing = true;
 
@@ -29,10 +34,14 @@ export async function processImageQueue() {
     // detect newly created images rather than picking an unrelated existing file.
     const beforeFiles = new Set();
     let startTime = Date.now();
+    
+    // Ensure output dir exists before trying to read it
     if (fs.existsSync(comfyOutputDir)) {
       for (const f of fs.readdirSync(comfyOutputDir).filter(f => f.endsWith('.png'))) {
         beforeFiles.add(f);
       }
+    } else {
+       console.warn(`⚠️ Comfy output directory not found at start: ${comfyOutputDir}`);
     }
 
     // Generate image via ComfyUI (rethrow on error)
@@ -93,6 +102,9 @@ export async function processImageQueue() {
     const newFileName = `image_${imageNumber}.png`;
     const newPath = path.join(projectDir, newFileName);
 
+    // Move file
+    // Note: Using renameSync across different drives (e.g. C: to D:) can fail. 
+    // If your project and ComfyUI are on different drives, use copyFileSync + unlinkSync instead.
     fs.renameSync(oldPath, newPath);
 
     // Update job

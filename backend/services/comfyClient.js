@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import axios from "axios";
 
-// Path to your exported workflow JSON
+// Path to your exported workflow JSON (Must be the API FORMAT version)
 const workflowPath = path.join("comfy", "tiktok_image_workflow.json");
 const comfyUrl = process.env.COMFY_URL || "http://127.0.0.1:8188";
 
@@ -17,73 +17,79 @@ export async function generateImageFromComfy(promptText) {
     if (!fs.existsSync(workflowPath)) {
       throw new Error(`Workflow JSON not found at ${workflowPath}`);
     }
-    // 2️⃣ Load workflow
-    const workflow = JSON.parse(fs.readFileSync(workflowPath, "utf-8"));
 
-    // 3️⃣ Update nodes in the exported workflow structure (workflow.nodes is an array)
-    const clipPrompts = [];
-    if (Array.isArray(workflow.nodes)) {
-      for (const node of workflow.nodes) {
-        // CLIPTextEncode stores prompt in widgets_values[0]
-        if (node.type === "CLIPTextEncode") {
-          // preserve the trailing newline pattern seen in the exported workflow
-          const value = `${promptText}\n`;
-          if (!Array.isArray(node.widgets_values)) node.widgets_values = [value];
-          else node.widgets_values[0] = value;
-          clipPrompts.push(value);
-        }
+    // 2️⃣ Load workflow (Expects API Format JSON)
+    let workflow;
+    try {
+      workflow = JSON.parse(fs.readFileSync(workflowPath, "utf-8"));
+    } catch (e) {
+      throw new Error("Failed to parse workflow JSON. Make sure it is valid JSON.");
+    }
 
-        // KSampler widgets_values from exported file look like:
-        // [seed, sampler_mode, steps, cfg, sampler_name, scheduler, denoise]
-        if (node.type === "KSampler") {
-          if (!Array.isArray(node.widgets_values)) node.widgets_values = [];
-          node.widgets_values[0] = -1;    // seed: -1 => random
-          node.widgets_values[2] = 20;    // steps
-          node.widgets_values[3] = 7.5;   // cfg scale
+    // 3️⃣ Update nodes in the API workflow structure
+    // In API format, 'workflow' is an object where keys are node IDs.
+    const nodeIds = Object.keys(workflow);
+    let promptSet = false;
+
+    for (const id of nodeIds) {
+      const node = workflow[id];
+      
+      // Update Text Prompts
+      if (node.class_type === "CLIPTextEncode") {
+        // In API format, inputs are stored in the "inputs" object
+        if (node.inputs) {
+            // Note: Depending on your workflow, you might want to differentiate 
+            // between positive and negative prompts here. 
+            // For now, this sets ALL text nodes to your prompt.
+            // You might want to filter by specific node IDs if you have a negative prompt node.
+            node.inputs.text = promptText;
+            promptSet = true;
         }
       }
-    } else {
-      // Fallback: try to handle older/simpler formats
-      console.warn("Comfy workflow shape unexpected: missing nodes array");
+
+      // Update KSampler (Optional: Randomize seed)
+      if (node.class_type === "KSampler") {
+        if (node.inputs) {
+            node.inputs.seed = Math.floor(Math.random() * 1000000000000000); // Random integer seed
+        }
+      }
     }
 
-    // Write the prepared workflow to disk for debugging inspection
-    try {
-      const debugPath = path.join("comfy", "last_sent_workflow.json");
-      fs.writeFileSync(debugPath, JSON.stringify(workflow, null, 2), "utf-8");
-      console.log("Saved prepared workflow for inspection:", debugPath);
-    } catch (writeErr) {
-      console.warn("Could not write debug workflow file:", writeErr.message);
+    if (!promptSet) {
+        console.warn("⚠️ No CLIPTextEncode nodes found to update. Sending workflow as-is.");
     }
 
-    // Log CLIP prompts that will be sent to Comfy
-    if (clipPrompts.length > 0) {
-      console.log("CLIP prompts set in workflow:", clipPrompts);
-    } else {
-      console.warn("No CLIPTextEncode nodes found in workflow to set prompt.");
-    }
+    // 4️⃣ Send workflow to ComfyUI
+    // IMPORTANT: The key must be "prompt", not "workflow"
+    const payload = { 
+        prompt: workflow,
+        client_id: "tiktok_app_backend" // Optional but good practice
+    };
 
-    // 4️⃣ Send workflow to ComfyUI and throw on non-200 so callers can handle failure
-    const payload = { workflow };
+    console.log(`🚀 Sending generation request to ${comfyUrl}...`);
+
     let response;
     try {
-      response = await axios.post(`${comfyUrl}/prompt`, payload, { timeout: 30000 });
+      response = await axios.post(`${comfyUrl}/prompt`, payload, { 
+        headers: { "Content-Type": "application/json" },
+        timeout: 30000 
+      });
     } catch (err) {
       console.error("❌ Failed to send workflow to ComfyUI:", err.message);
-      if (err.response) console.error("ComfyUI response:", err.response.status, err.response.data);
+      if (err.response) {
+          console.error("ComfyUI Response Data:", JSON.stringify(err.response.data, null, 2));
+      }
       throw err;
     }
 
     if (response.status !== 200) {
-      console.error("❌ ComfyUI returned non-200 status:", response.status, response.data);
       throw new Error(`ComfyUI returned ${response.status}`);
     }
 
-    console.log("✅ ComfyUI workflow sent successfully for prompt:", promptText);
+    console.log("✅ ComfyUI accepted job:", response.data);
 
   } catch (err) {
     console.error("❌ ComfyUI image generation failed:", err.message);
-    // rethrow so the caller can mark job failed and avoid waiting for an image
     throw err;
   }
 }
